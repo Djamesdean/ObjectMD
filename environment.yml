@@ -1,4 +1,4 @@
-name: ObjectMD
+name: objectmd_ENV
 channels:
   - conda-forge
 dependencies:
