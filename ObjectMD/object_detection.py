@@ -1,79 +1,87 @@
-from glob import glob
 import json
 from pathlib import Path
 
 import cv2
-from tqdm import tqdm
-from ultralytics import YOLO  # Make sure ultralytics is installed
+from ultralytics import YOLO
 
-CONFIDENCE_THRESHOLD = 0.5
+INPUT_DIR = Path("data/processed/frames")
+BOX_OUT_DIR = Path("data/processed/objects")
+DEMO_DIR = Path("data/demo")  # For visualizations
+BOX_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Path setup
-VIDEO_DIR = Path("data/raw/")
-OUTPUT_DIR = Path("data/processed/objects/")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+model = YOLO("runs/detect/train/weights/best.pt")
 
-# Load model
-model = YOLO("runs/detect/train/weights/best.pt")  
+demo_saved = 0
+MAX_DEMO = 5  # Save some demo images
 
-def detect_objects_in_video(video_path):
-    cap = cv2.VideoCapture(str(video_path))
-    frame_idx = 0
-    video_name = video_path.stem
+for video_folder in sorted(INPUT_DIR.iterdir()):
+    if not video_folder.is_dir():
+        continue
+
     detections = []
-    
-    #Optional for saving demo video with box hgihlighted
-    '''fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    demo_out = cv2.VideoWriter(str(OUTPUT_DIR / f"demo_{video_name}.mp4"), fourcc, fps, (width, height))'''
+    frame_files = sorted(video_folder.glob("*.jpg"))
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    for idx, frame_path in enumerate(frame_files):
+        results = model(str(frame_path))
+        
+        frame_detections = {
+            "frame": idx, 
+            "boxes": [],  # Support multiple boxes
+            "best_box": None,
+            "best_confidence": 0.0
+        }
 
-        # Run YOLO detection
-        results = model(frame)[0]  # Only take first result
+        for result in results:
+            for box in result.boxes:
+                if int(box.cls[0]) == 0 and box.conf[0] > 0.3:  # Lower threshold for more detections
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    confidence = float(box.conf[0])
+                    
+                    box_data = {
+                        "bbox": [x1, y1, x2, y2],
+                        "confidence": confidence,
+                        "center": [(x1 + x2) / 2, (y1 + y2) / 2]  # Useful for tracking movement
+                    }
+                    
+                    frame_detections["boxes"].append(box_data)
+                    
+                    # Keep track of best detection
+                    if confidence > frame_detections["best_confidence"]:
+                        frame_detections["best_box"] = box_data
+                        frame_detections["best_confidence"] = confidence
 
-        for result in results.boxes:
-            cls_id = int(result.cls)
-            label = model.names[cls_id]
+        detections.append(frame_detections)
+        
+        # Save demo visualization (first few good detections)
+        if demo_saved < MAX_DEMO and frame_detections["best_box"]:
+            frame = cv2.imread(str(frame_path))
+            if frame is not None:
+                # Draw bounding box
+                bbox = frame_detections["best_box"]["bbox"]
+                x1, y1, x2, y2 = map(int, bbox)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # Add confidence text
+                conf = frame_detections["best_confidence"]
+                cv2.putText(frame, f"Box: {conf:.2f}", (x1, y1-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(frame, f"Video: {video_folder.name}", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                # Save demo
+                demo_filename = f"box_demo_{demo_saved+1:02d}_{video_folder.name}_frame{idx:04d}.jpg"
+                cv2.imwrite(str(DEMO_DIR / demo_filename), frame)
+                demo_saved += 1
+                print(f"📦 Saved box demo {demo_saved}/5: {demo_filename}")
 
-            # Filter detections to include only box or package and confidence threshold
-            if label.lower() in ["box", "package"]:
-                conf = float(result.conf[0])
-                if conf < CONFIDENCE_THRESHOLD:
-                    continue
-                x1, y1, x2, y2 = map(int, result.xyxy[0])
-                detections.append({
-                    "frame": frame_idx,
-                    "label": label,
-                    "confidence": conf,
-                    "bbox": [x1, y1, x2, y2]
-                })
-
-                # Draw bounding box and label on the frame
-                '''cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                label_text = f"{label}: {conf:.2f}"
-                cv2.putText(frame, label_text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            
-        demo_out.write(frame)'''
-
-        frame_idx += 1
-
-    cap.release()
-    #demo_out.release()
-    # Save to JSON
-    out_path = OUTPUT_DIR / f"detections_{video_name}.json"
-    with open(out_path, "w") as f:
+    # Save detections
+    out_file = BOX_OUT_DIR / f"detections_{video_folder.name}.json"
+    with open(out_file, 'w') as f:
         json.dump(detections, f, indent=2)
 
-def process_all_videos():
-    video_paths = glob('data/raw/**/*.mp4', recursive=True)
-    for video_path in tqdm(video_paths, desc="Running object detection"):
-        detect_objects_in_video(Path(video_path))
+    # Print detection stats
+    detected_frames = len([d for d in detections if d["best_box"] is not None])
+    total_boxes = sum(len(d["boxes"]) for d in detections)
+    print(f"✅ {video_folder.name}: {detected_frames}/{len(detections)} frames with boxes, {total_boxes} total detections")
 
-if __name__ == "__main__":
-    process_all_videos()
+print(f"\n🎉 Object detection complete! {demo_saved} demo frames saved")

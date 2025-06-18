@@ -10,10 +10,17 @@ from tqdm import tqdm
 VIDEOS_DIR = Path("data/raw")
 LABELS_PATH = Path("data/processed/labels.json")
 OUTPUT_DIR = Path("data/processed/frames")
-FPS = 5  # frames per second to extract
+RESOLUTION_OUTPUT_PATH = Path("data/processed/video_resolutions.json")
+video_resolutions = {}
+FPS = 10  # frames per second to extract
 
 def extract_frames_from_video(video_path: Path, output_folder: Path, fps: int):
     cap = cv2.VideoCapture(str(video_path))
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    video_resolutions[video_path.stem] = (width, height)
+
     if not cap.isOpened():
         print(f"⚠️ Failed to open {video_path}")
         return
@@ -59,7 +66,9 @@ def main():
         video_stem = video_file.stem
         output_path = OUTPUT_DIR / video_stem
         extract_frames_from_video(video_file, output_path, FPS)
-
+    with open(RESOLUTION_OUTPUT_PATH, "w") as f:
+    json.dump(video_resolutions, f, indent=2)
+    print(f"📏 Saved video resolutions to {RESOLUTION_OUTPUT_PATH}")
     print("✅ All done.")
 
 if __name__ == "__main__":

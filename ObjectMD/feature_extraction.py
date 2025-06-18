@@ -1,187 +1,122 @@
+# Simplified feature_extraction.py for training (updated to support best_box format)
 import json
 from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
-# === CONFIG ===
 POSE_DIR = Path("data/processed/pose_data")
 BOX_DIR = Path("data/processed/objects")
-LABEL_FILE = Path("data/processed/labels.json")  # optional
-OUTPUT_DIR = Path("data/processed/features")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+LABELS_FILE = Path("data/processed/labels.json")
+RESOLUTIONS_FILE = Path("data/processed/video_resolutions.json")
+OUTPUT_FILE = Path("data/features/features.csv")
+OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-IMAGE_WIDTH = 640
-IMAGE_HEIGHT = 480
 
-# === HELPERS ===
-def load_json(path):
-    with open(path, "r") as f:
-        return json.load(f)
+PROCESSED_FPS = 10
 
-def euclidean(p1, p2):
+def load_json(path: Path) -> dict:
+    if path.exists():
+        with open(path, "r") as f:
+            return json.load(f)
+    return {}
+
+def calculate_distance(p1: Optional[List], p2: Optional[List]) -> Optional[float]:
+    if not p1 or not p2 or None in p1 or None in p2:
+        return None
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
-def normalize_coordinates(x, y):
-    """Normalize pixel coordinates to 0-1 range"""
-    return x / IMAGE_WIDTH, y / IMAGE_HEIGHT
+def calculate_velocity(current: Optional[List], previous: Optional[List]) -> Optional[float]:
+    return calculate_distance(current, previous) if current and previous else None
 
-def normalize_dimensions(w, h):
-    """Normalize width and height to 0-1 range"""
-    return w / IMAGE_WIDTH, h / IMAGE_HEIGHT
+def extract_features(video_name: str, label: dict) -> pd.DataFrame:
+    pose_path = POSE_DIR / f"{video_name}_pose.json"
+    box_path = BOX_DIR / f"detections_{video_name}.json"
+    pose_data = load_json(pose_path).get("frames", [])
+    box_data = load_json(box_path)
 
-def compute_box_center(bbox):
-    """Compute box center and dimensions in pixel space, then normalize"""
-    x1, y1, x2, y2 = bbox
-    cx = (x1 + x2) / 2
-    cy = (y1 + y2) / 2
-    w = x2 - x1
-    h = y2 - y1
-    
-    # Normalize all values
-    cx_norm, cy_norm = normalize_coordinates(cx, cy)
-    w_norm, h_norm = normalize_dimensions(w, h)
-    
-    return cx_norm, cy_norm, w_norm, h_norm
+    resolutions = load_json(RESOLUTIONS_FILE)
+    frame_width, frame_height = resolutions.get(video_name, (1280, 720))
 
-def extract_features(pose_data, box_data):
-    features = []
-    last_cx, last_cy = None, None
-    
-    print(f"Processing {len(box_data)} frames")
-    
-    # Extract frames data from pose_data
-    pose_frames = pose_data.get('frames', [])
-    print(f"Pose frames available: {len(pose_frames)}")
-    
-    # Create a lookup dictionary for pose frames by frame_index
-    pose_lookup = {}
-    for pose_frame in pose_frames:
-        frame_idx = pose_frame.get('frame_index')
-        if frame_idx is not None:
-            pose_lookup[frame_idx] = pose_frame
-    
-    print(f"Pose lookup created for frames: {sorted(pose_lookup.keys())[:10]}...")  # Show first 10
-    
-    for box_frame in box_data:
-        frame_idx = box_frame.get('frame')
-        
-        if frame_idx is None:
-            print(f"Warning: Box frame missing 'frame' key: {box_frame}")
-            continue
-        
-        # Look for pose data for this frame
-        pose_frame = pose_lookup.get(frame_idx, {})
-        
-        if not box_frame.get("bbox"):
-            print(f"Frame {frame_idx}: No bbox found")
-            continue
+    action_start_frame = int(label["action_start"]["video_second"] * PROCESSED_FPS)
+    action_end_frame = int(label["action_end"]["video_second"] * PROCESSED_FPS)
 
-        # Box info - compute normalized center and dimensions
-        bbox = box_frame["bbox"]
-        cx, cy, w, h = compute_box_center(bbox)
+    rows = []
+    prev_box_center = None
+    total_frames = max(len(pose_data), len(box_data))
 
-        # Box motion
-        if last_cx is not None:
-            dx = cx - last_cx
-            dy = cy - last_cy
-        else:
-            dx = dy = 0
-        last_cx, last_cy = cx, cy
+    for i in range(total_frames):
+        row = {
+            "video_name": video_name,
+            "frame_index": i,
+            "timestamp": i / PROCESSED_FPS,
+            "is_moving": 1 if action_start_frame <= i <= action_end_frame else 0
+        }
 
-        # Wrist positions
-        lw = pose_frame.get("left_wrist")
-        rw = pose_frame.get("right_wrist")
-
-        # Process left wrist
-        if lw and len(lw) >= 2 and lw[0] is not None and lw[1] is not None:
-            lwx, lwy = lw[0], lw[1]
-            # If coordinates seem to be in pixel space (>1), normalize them
-            if lwx > 1 or lwy > 1:
-                lwx, lwy = normalize_coordinates(lwx, lwy)
-        else:
-            lwx = lwy = np.nan
-
-        # Process right wrist
-        if rw and len(rw) >= 2 and rw[0] is not None and rw[1] is not None:
-            rwx, rwy = rw[0], rw[1]
-            # If coordinates seem to be in pixel space (>1), normalize them
-            if rwx > 1 or rwy > 1:
-                rwx, rwy = normalize_coordinates(rwx, rwy)
-        else:
-            rwx = rwy = np.nan
-
-        # Debug print for first few frames
-        if frame_idx < 3:
-            print(f"Frame {frame_idx}:")
-            print(f"  Box center: ({cx:.3f}, {cy:.3f})")
-            print(f"  Pose frame found: {bool(pose_frame)}")
-            print(f"  Pose frame keys: {list(pose_frame.keys()) if pose_frame else 'None'}")
-            print(f"  Left wrist raw: {lw}")
-            print(f"  Right wrist raw: {rw}")
-            print(f"  Left wrist processed: ({lwx}, {lwy})")
-            print(f"  Right wrist processed: ({rwx}, {rwy})")
-
-        # Distances (now both coordinates are in same normalized space)
-        dist_left = euclidean([lwx, lwy], [cx, cy]) if not np.isnan(lwx) else np.nan
-        dist_right = euclidean([rwx, rwy], [cx, cy]) if not np.isnan(rwx) else np.nan
-        min_dist = np.nanmin([dist_left, dist_right])
-
-        features.append({
-            "frame": frame_idx,
-            "box_cx": cx,
-            "box_cy": cy,
-            "box_w": w,
-            "box_h": h,
-            "box_dx": dx,
-            "box_dy": dy,
-            "left_wrist_x": lwx,
-            "left_wrist_y": lwy,
-            "right_wrist_x": rwx,
-            "right_wrist_y": rwy,
-            "dist_left_to_box": dist_left,
-            "dist_right_to_box": dist_right,
-            "min_hand_dist": min_dist
+        # Hand positions
+        lw = pose_data[i].get("left_wrist") if i < len(pose_data) else [None, None]
+        rw = pose_data[i].get("right_wrist") if i < len(pose_data) else [None, None]
+        row.update({
+            "left_wrist_x": lw[0], "left_wrist_y": lw[1],
+            "right_wrist_x": rw[0], "right_wrist_y": rw[1]
         })
 
-    return pd.DataFrame(features)
+        # Box detection from best_box
+        box_frame = box_data[i] if i < len(box_data) else {}
+        best_box = box_frame.get("best_box")
+        if best_box and best_box.get("confidence", 0) >= 0.5:
+            bbox = best_box.get("bbox")
+            center = best_box.get("center")
+        else:
+            bbox = center = None
 
-# === MAIN ===
-pose_files = sorted(POSE_DIR.glob("*_pose.json"))
+        if center:
+            cx, cy = center
+            cx = cx / frame_width
+            cy = cy / frame_height
+        else:
+            cx = cy = None
 
-for pose_file in tqdm(pose_files, desc="Extracting features"):
-    video_name = pose_file.stem.replace("_pose", "")
-    box_file = BOX_DIR / f"detections_{video_name}.json"
-    
-    if not box_file.exists():
-        print(f"Skipping {video_name}: box file not found")
-        continue
+        row.update({"box_center_x": cx, "box_center_y": cy})
 
-    print(f"\nProcessing {video_name}")
-    
-    pose_data = load_json(pose_file)
-    box_data = load_json(box_file)
-    
-    print(f"Pose data structure: {type(pose_data)}")
-    print(f"Pose data keys: {list(pose_data.keys())}")
-    print(f"Box data length: {len(box_data)}")
+        # Features
+        box_velocity = calculate_velocity([cx, cy], prev_box_center)
+        lw_dist = calculate_distance(lw, [cx, cy]) if cx is not None else None
+        rw_dist = calculate_distance(rw, [cx, cy]) if cx is not None else None
+        if lw_dist is not None and rw_dist is not None:
+            avg_hand_box_dist = np.mean([lw_dist, rw_dist])
+        elif lw_dist is not None:
+            avg_hand_box_dist = lw_dist
+        elif rw_dist is not None:
+            avg_hand_box_dist = rw_dist
+        else:
+            avg_hand_box_dist = None
+        wrist_dist = calculate_distance(lw, rw)
 
-    df = extract_features(pose_data, box_data)
-    
-    # Check if we got any valid data
-    if len(df) == 0:
-        print(f"Warning: No features extracted for {video_name}")
-        continue
-    
-    # Print summary of extracted features
-    print(f"Extracted {len(df)} feature rows")
-    print(f"Valid left wrist positions: {df['left_wrist_x'].notna().sum()}")
-    print(f"Valid right wrist positions: {df['right_wrist_x'].notna().sum()}")
-    
-    # Save the features
-    output_file = OUTPUT_DIR / f"features_{video_name}.csv"
-    df.to_csv(output_file, index=False)
-    print(f"Saved to {output_file}")
+        row.update({
+            "box_velocity": box_velocity,
+            "avg_hand_box_distance": avg_hand_box_dist,
+            "wrist_distance": wrist_dist
+        })
 
-print("✅ Feature extraction complete.")
+        prev_box_center = [cx, cy] if cx is not None else None
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+def main():
+    labels = load_json(LABELS_FILE)
+    all_dfs = []
+
+    for entry in labels:
+        video_name = Path(entry["video"]).stem
+        df = extract_features(video_name, entry)
+        all_dfs.append(df)
+
+    final_df = pd.concat(all_dfs, ignore_index=True)
+    final_df.to_csv(OUTPUT_FILE, index=False)
+    print(f"✅ Simplified feature dataset saved to {OUTPUT_FILE} with shape {final_df.shape}")
+
+if __name__ == "__main__":
+    main()
