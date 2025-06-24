@@ -68,7 +68,7 @@ def main():
         extract_frames_from_video(video_file, output_path, FPS)
     with open(RESOLUTION_OUTPUT_PATH, "w") as f:
     json.dump(video_resolutions, f, indent=2)
-    print(f"📏 Saved video resolutions to {RESOLUTION_OUTPUT_PATH}")
+    print(f" Saved video resolutions to {RESOLUTION_OUTPUT_PATH}")
     print("✅ All done.")
 
 if __name__ == "__main__":

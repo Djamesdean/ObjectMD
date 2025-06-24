@@ -274,7 +274,7 @@ class BoxMovementClassifier:
         plt.title('Precision vs Recall')
         
         plt.tight_layout()
-        plt.savefig("reports/figuers/classifier_comparison.png")
+        plt.savefig("reports/figures/classifier_comparison.png")
         plt.close()
     
     def final_evaluation(self, X_test, y_test):
@@ -307,7 +307,7 @@ class BoxMovementClassifier:
         plt.title(f'Confusion Matrix - {self.best_model_name}')
         plt.ylabel('Actual')
         plt.xlabel('Predicted')
-        plt.savefig("visuals/confusion_matrix.png")
+        plt.savefig("reports/figures/confusion_matrix.png")
         plt.close()
     
     def run_complete_analysis(self):
