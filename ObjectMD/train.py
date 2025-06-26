@@ -1,3 +1,4 @@
+import json
 import warnings
 
 import joblib
@@ -350,8 +351,9 @@ if __name__ == "__main__":
     best_model, results = classifier.run_complete_analysis()
     
     # Save the best model
-    
+    with open("models/feature_columns.json", "w") as f:
+        json.dump(classifier.feature_columns, f)
+
     joblib.dump(classifier.best_model, 'models/best_box_movement_classifier.pkl')
     joblib.dump(classifier.scaler, 'models/feature_scaler.pkl')
     
-    print("Analysis complete! The best model has been identified and can be saved for future use.")
