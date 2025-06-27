@@ -1,61 +1,168 @@
-# ObjectMD
+# 📦 Object Movement Detection
 
-<a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
-    <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
-</a>
+This project detects **object movement (specifically a box)** from video recordings using a combination of **pose estimation**, **object detection**, and **frame-level feature classification**.
 
-creating an object moving detection for a store box
+## 🚀 Overview
 
-## Project Organization
+The pipeline consists of:
+
+- ✅ Data Cleaning
+- 📸 Frame Extraction (10 FPS)
+- ✋ Hand Pose Estimation (MediaPipe)
+- 📦 Box Object Detection (YOLOv8 - fine-tuned)
+- 📈 Feature Extraction (pose + object + temporal features)
+- 🧠 Model Training (Random Forest / XGBoost)
+- 🔍 Evaluation + Confidence Scoring
+- 🎥 Inference on New Videos (automated end-to-end)
+
+---
+
+## 📁 Project Structure
 
 ```
-├── LICENSE            <- Open-source license if one is chosen
-├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers using this project.
-├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
+ObjectMD/
 │
-├── docs               <- A default mkdocs project; see www.mkdocs.org for details
+├── data/
+│   ├── raw/                    # Original videos (organized in folders by class)
+│   ├── processed/
+│   │   ├── frames/             # Extracted video frames (10 FPS)
+│   │   ├── pose_data/         # Pose estimation JSON outputs
+│   │   ├── objects/           # YOLOv8 detection results (per frame)
+│   │   └── video_resolutions.json
+│   ├── roboflow/              # Labeled dataset used for YOLO training
+│   └── labels.json            # Metadata: box size, subject height, start/end times
 │
-├── models             <- Trained and serialized models, model predictions, or model summaries
+├── src/
+│   ├── data/clean_dataset.py
+│   ├── features/pose_estimation.py
+│   ├── features/box_detection.py
+│   ├── features/feature_extraction.py
+│   ├── models/train.py
+│   └── inference/Evaluation.py
 │
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
-│
-├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         ObjectMD and configuration for tools like black
-│
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-│
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
-│
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
-│
-├── setup.cfg          <- Configuration file for flake8
-│
-└── ObjectMD   <- Source code for use in this project.
-    │
-    ├── __init__.py             <- Makes ObjectMD a Python module
-    │
-    ├── config.py               <- Store useful variables and configuration
-    │
-    ├── dataset.py              <- Scripts to download or generate data
-    │
-    ├── features.py             <- Code to create features for modeling
-    │
-    ├── modeling                
-    │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
-    │
-    └── plots.py                <- Code to create visualizations
+├── reports/
+│   └── figures/               # All training graphs, confusion matrices, etc.
+├── visuals/                   # Demo videos and result plots
+├── requirements.txt
+└── README.md
 ```
 
---------
+---
 
+## ⚙️ Setup Instructions
+
+### 1. Clone and Create Conda Environment
+
+```bash
+git clone https://github.com/yourusername/ObjectMD.git
+cd ObjectMD
+
+conda create -n objectmd_ENV python=3.10
+conda activate objectmd_ENV
+```
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+Also install:
+- PyTorch + Torchvision (with MPS or CUDA support)
+- MediaPipe
+- OpenCV
+- scikit-learn
+- ultralytics (`pip install ultralytics`)
+
+---
+
+## 🧪 Running the Project
+
+### Step 1: Clean the Dataset
+
+```bash
+python -m src.data.clean_dataset
+```
+
+### Step 2: Extract Frames (10 FPS)
+
+```bash
+python -m src.data.frame_extraction
+```
+
+### Step 3: Pose Estimation (hands)
+
+```bash
+python -m src.features.pose_estimation
+```
+
+### Step 4: Box Detection (YOLOv8)
+
+Make sure your `best.pt` is saved in the YOLOv8 directory.
+
+```bash
+python -m src.features.box_detection
+```
+
+### Step 5: Feature Extraction
+
+```bash
+python -m src.features.feature_extraction
+```
+
+Generates `data/features/features.csv`.
+
+### Step 6: Train Model
+
+```bash
+python -m src.models.train
+```
+
+Saves model + scaler and plots in `reports/` and `visuals/`.
+
+### Step 7: Run Inference on New Video
+
+```bash
+python -m src.inference.Evaluation --video_path path/to/video.mp4
+```
+
+Outputs predictions with frame-level movement confidence.
+
+---
+
+## 📊 Model Info
+
+- Classifier: `Random Forest` or `XGBoost`
+- Input Features:
+  - Box center, box speed, hand-to-box distance
+  - Smoothed features (rolling window)
+  - Confidence-weighted motion
+- Output: Frame-wise movement classification (`is_moving = 1/0`)
+- Output Format: CSV + optional visualization video
+
+---
+
+## 📈 Results
+
+- Average Accuracy: ~85%
+- Most Important Features:
+  - `avg_hand_to_box_dist`
+  - `box_speed`
+- Challenges: inconsistent hand detection, resolution mismatches
+
+---
+
+## 🛠️ Future Work
+
+- Add temporal modeling (LSTM, 1D-CNN)
+- Deploy on real-time camera input
+- Improve edge-case annotations
+
+
+
+---
+
+## 👤 Author
+
+- **Djames (GitHub: @yourusername)**  
+- Computer Science & AI Student
