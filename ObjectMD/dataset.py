@@ -4,7 +4,7 @@ from typing import List
 
 # Configurable paths
 RAW_DATA_DIR = Path("data/raw")
-PROCESSED_DATA_DIR = Path("data/processed")
+PROCESSED_DATA_DIR = Path("data/demo")
 LABELS_FILE = RAW_DATA_DIR / "annotations.json"
 CLEANED_LABELS_FILE = PROCESSED_DATA_DIR / "labels.json"
 

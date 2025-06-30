@@ -155,7 +155,7 @@ class BoxMovementClassifier:
         iou = intersection / union if union > 0 else 0.0
         print(f"Temporal IoU: {iou:.3f}")
         
-              # New simplified visualization: start/end frames only
+              # visualization
         plt.figure(figsize=(10, 2))
         plt.title("Temporal Boundary Comparison")
         plt.axvline(start_true, color='green', linestyle='--', label='True Start')
@@ -194,3 +194,5 @@ if __name__ == "__main__":
         test_file='data/features/features.csv',
         video_name='gd_0022'
     )
+
+    

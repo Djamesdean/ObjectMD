@@ -13,7 +13,7 @@ The pipeline consists of:
 - 📈 Feature Extraction (pose + object + temporal features)
 - 🧠 Model Training (Random Forest / XGBoost)
 - 🔍 Evaluation + Confidence Scoring
-- 🎥 Inference on New Videos (automated end-to-end)
+- 🎥 Inference on New Videos 
 
 ---
 
@@ -32,13 +32,14 @@ ObjectMD/
 │   ├── roboflow/              # Labeled dataset used for YOLO training
 │   └── labels.json            # Metadata: box size, subject height, start/end times
 │
-├── src/
-│   ├── data/clean_dataset.py
-│   ├── features/pose_estimation.py
-│   ├── features/box_detection.py
-│   ├── features/feature_extraction.py
-│   ├── models/train.py
-│   └── inference/Evaluation.py
+├── ObjectMD/
+│   ├── dataset.py
+│   ├── pose_estimation.py
+│   ├── box_detection.py
+│   ├── feature_extraction.py
+│   ├── train.py
+│   └── Evaluation.py
+    └──Visualization.py
 │
 ├── reports/
 │   └── figures/               # All training graphs, confusion matrices, etc.
@@ -81,33 +82,33 @@ Also install:
 ### Step 1: Clean the Dataset
 
 ```bash
-python -m src.data.clean_dataset
+python -m ObjectMd.dataset
 ```
 
 ### Step 2: Extract Frames (10 FPS)
 
 ```bash
-python -m src.data.frame_extraction
+python -m ObjectMD.frames
 ```
 
 ### Step 3: Pose Estimation (hands)
 
 ```bash
-python -m src.features.pose_estimation
+python -m ObjectMD.pose_estimation
 ```
 
 ### Step 4: Box Detection (YOLOv8)
 
-Make sure your `best.pt` is saved in the YOLOv8 directory.
+Make sure  `best.pt` is saved in the YOLOv8 directory.
 
 ```bash
-python -m src.features.box_detection
+python -m ObjectMD.features.box_detection
 ```
 
 ### Step 5: Feature Extraction
 
 ```bash
-python -m src.features.feature_extraction
+python -m ObjectMD.feature_extraction
 ```
 
 Generates `data/features/features.csv`.
@@ -115,7 +116,7 @@ Generates `data/features/features.csv`.
 ### Step 6: Train Model
 
 ```bash
-python -m src.models.train
+python -m ObjectMD.train
 ```
 
 Saves model + scaler and plots in `reports/` and `visuals/`.
@@ -123,10 +124,12 @@ Saves model + scaler and plots in `reports/` and `visuals/`.
 ### Step 7: Run Inference on New Video
 
 ```bash
-python -m src.inference.Evaluation --video_path path/to/video.mp4
+python -m ObjectMD.evaluation 
 ```
+run a test on specific video
 
-Outputs predictions with frame-level movement confidence.
+
+
 
 ---
 
